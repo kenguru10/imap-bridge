@@ -182,36 +182,48 @@ export class SyncEngine {
     const accountId = String(account.accountId);
     const lastKey = `${folderName.toLowerCase()}_${accountId}`;
     let lastEmailId = as.lastEmailIds[lastKey] || 0;
+    const pageSize = config.sync.pageSize || 50;
+    let page = 0;
 
     let hasMore = true;
     while (hasMore) {
+      page += 1;
+      console.log(`[sync] folder=${folderName} account=${account.email} (${accountId}) page=${page} cursor=${lastEmailId}`);
+
       const result = await login.client.listEmails({
         accountId,
         type,
-        size: String(config.sync.pageSize || 50),
+        size: String(pageSize),
         emailId: String(lastEmailId),
-        timeSort: '0',
+        timeSort: '1', // ascending order so max-ID cursor pagination works
         full: '1',
         ...extraFilters
       });
 
       const emails = result.data?.list || result.data || [];
+      console.log(`[sync] folder=${folderName} account=${account.email} page=${page} returned=${emails.length}`);
+
       if (emails.length === 0) break;
 
+      let saved = 0;
+      let skipped = 0;
       for (const email of emails) {
-        if (folderName === TRASH && email.isDel !== 1) continue;
-        if (folderName === SENT && email.type !== 1) continue;
+        if (folderName === TRASH && email.isDel !== 1) { skipped += 1; continue; }
+        if (folderName === SENT && email.type !== 1) { skipped += 1; continue; }
 
         await this.saveEmailToMaildir(login, base, email, account, folderName);
+        saved += 1;
         if (email.emailId > lastEmailId) {
           lastEmailId = email.emailId;
         }
       }
 
-      hasMore = emails.length === (config.sync.pageSize || 50);
+      console.log(`[sync] folder=${folderName} account=${account.email} page=${page} saved=${saved} skipped=${skipped} newCursor=${lastEmailId}`);
+      hasMore = emails.length === pageSize;
     }
 
     as.lastEmailIds[lastKey] = lastEmailId;
+    console.log(`[sync] folder=${folderName} account=${account.email} finalCursor=${lastEmailId}`);
   }
 
   async saveEmailToMaildir(login, base, email, account, forceFolder) {
