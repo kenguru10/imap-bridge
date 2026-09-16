@@ -98,6 +98,21 @@ export class SyncEngine {
 
   async syncAll() {
     console.log(`[sync] Starting sync of ${this.accounts.length} account(s) at ${new Date().toISOString()}`);
+
+    const configuredTimeSort = String(config.sync?.timeSort ?? '1');
+    const forceFullSync = config.sync?.forceFullSync === true;
+
+    if (forceFullSync || this.state.timeSort !== configuredTimeSort) {
+      if (this.state.timeSort) {
+        console.log(`[sync] Sort order or full-sync flag changed (${this.state.timeSort} -> ${configuredTimeSort}); resetting email cursors for full re-sync`);
+      }
+      for (const key of Object.keys(this.state.accounts)) {
+        this.state.accounts[key].lastEmailIds = {};
+      }
+      this.state.timeSort = configuredTimeSort;
+      saveState(this.state);
+    }
+
     await this.migrateLegacyMail();
     for (const entry of this.accounts) {
       try {
@@ -195,7 +210,7 @@ export class SyncEngine {
         type,
         size: String(pageSize),
         emailId: String(lastEmailId),
-        timeSort: '1', // ascending order so max-ID cursor pagination works
+        timeSort: String(config.sync?.timeSort ?? '1'), // ascending order so max-ID cursor pagination works
         full: '1',
         ...extraFilters
       });

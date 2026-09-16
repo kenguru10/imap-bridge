@@ -32,6 +32,8 @@
   "sync": {
     "intervalSeconds": 60,
     "pageSize": 50,
-    "stateFile": "/var/mail/cloudmail/bridge-state.json"
+    "stateFile": "/var/mail/cloudmail/bridge-state.json",
+    "timeSort": "1",
+    "forceFullSync": false
   }
 }
