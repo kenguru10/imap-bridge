@@ -1,6 +1,46 @@
 const { SMTPServer } = require('smtp-server');
 const { simpleParser } = require('mailparser');
+const nodemailer = require('nodemailer');
 const config = require('./config');
+
+async function sendViaResend(parsed, fromAddress, toAddresses, ccAddresses, bccAddresses) {
+  const transporter = nodemailer.createTransport({
+    host: config.resendSmtpHost,
+    port: config.resendSmtpPort,
+    secure: config.resendSmtpSecure,
+    auth: {
+      user: config.resendSmtpUser,
+      pass: config.resendApiKey,
+    },
+  });
+
+  const attachments = (parsed.attachments || []).map((att) => ({
+    filename: att.filename,
+    content: att.content,
+    contentType: att.contentType,
+    contentDisposition: att.contentDisposition,
+    cid: att.cid || undefined,
+  }));
+
+  const info = await transporter.sendMail({
+    from: fromAddress,
+    to: toAddresses,
+    cc: ccAddresses,
+    bcc: bccAddresses,
+    subject: parsed.subject || '',
+    text: parsed.text || '',
+    html: parsed.html || parsed.textAsHtml || '',
+    attachments,
+  });
+
+  // Return a synthetic email result for the local Sent folder copy.
+  return {
+    emailId: Date.now(),
+    sendEmail: fromAddress,
+    createTime: new Date().toISOString(),
+    messageId: info.messageId,
+  };
+}
 
 function createSMTPServer(getSessionStore) {
   const hasTls = !!(config.tlsKeyPath && config.tlsCertPath);
@@ -36,38 +76,42 @@ function createSMTPServer(getSessionStore) {
           return callback(new Error(`No cloud-mail account matches ${fromAddress}`));
         }
 
-        const toAddresses = [
-          ...((parsed.to && parsed.to.value) || []),
-          ...((parsed.cc && parsed.cc.value) || []),
-        ].map((a) => a.address);
-
+        const toAddresses = ((parsed.to && parsed.to.value) || []).map((a) => a.address);
+        const ccAddresses = ((parsed.cc && parsed.cc.value) || []).map((a) => a.address);
+        const bccAddresses = ((parsed.bcc && parsed.bcc.value) || []).map((a) => a.address);
         const rcptAddresses = session.envelope.rcptTo.map((r) => r.address);
-        const receiveEmail = [...new Set([...toAddresses, ...rcptAddresses])].filter(Boolean);
+        const receiveEmail = [...new Set([...toAddresses, ...ccAddresses, ...bccAddresses, ...rcptAddresses])].filter(Boolean);
 
         if (!receiveEmail.length) {
           return callback(new Error('No recipients'));
         }
 
-        const attachments = (parsed.attachments || []).map((att) => ({
-          filename: att.filename,
-          content: att.content.toString('base64'),
-          contentType: att.contentType,
-          contentId: att.cid || undefined,
-          disposition: att.contentDisposition,
-          type: att.cid ? 1 : 0,
-        }));
+        let emailResult;
 
-        const payload = {
-          accountId: account.accountId,
-          receiveEmail,
-          subject: parsed.subject || '',
-          text: parsed.text || '',
-          content: parsed.html || parsed.textAsHtml || '',
-          attachments,
-        };
+        if (config.smtpRelayProvider === 'resend') {
+          emailResult = await sendViaResend(parsed, fromAddress, toAddresses, ccAddresses, bccAddresses);
+        } else {
+          const attachments = (parsed.attachments || []).map((att) => ({
+            filename: att.filename,
+            content: att.content.toString('base64'),
+            contentType: att.contentType,
+            contentId: att.cid || undefined,
+            disposition: att.contentDisposition,
+            type: att.cid ? 1 : 0,
+          }));
 
-        const result = await store.client.sendEmail(payload);
-        const emailResult = Array.isArray(result) ? result[0] : result;
+          const payload = {
+            accountId: account.accountId,
+            receiveEmail,
+            subject: parsed.subject || '',
+            text: parsed.text || '',
+            content: parsed.html || parsed.textAsHtml || '',
+            attachments,
+          };
+
+          const result = await store.client.sendEmail(payload);
+          emailResult = Array.isArray(result) ? result[0] : result;
+        }
 
         // Save a copy to the local Sent folder so Outlook sees it.
         await store.appendSentCopy(parsed, emailResult);

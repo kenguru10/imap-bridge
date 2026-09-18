@@ -20,6 +20,13 @@ module.exports = {
   smtpMaxMessageSize: Number(process.env.SMTP_MAX_MESSAGE_SIZE || 52428800),
   smtpMaxClients: Number(process.env.SMTP_MAX_CLIENTS || 100),
 
+  smtpRelayProvider: (process.env.SMTP_RELAY_PROVIDER || 'worker').toLowerCase(),
+  resendSmtpHost: process.env.RESEND_SMTP_HOST || 'smtp.resend.com',
+  resendSmtpPort: Number(process.env.RESEND_SMTP_PORT || 587),
+  resendSmtpSecure: boolish(process.env.RESEND_SMTP_SECURE),
+  resendSmtpUser: process.env.RESEND_SMTP_USER || 'resend',
+  resendApiKey: process.env.RESEND_API_KEY || '',
+
   pollIntervalMs: Number(process.env.POLL_INTERVAL_MS || 30000),
   maxInitialMessages: Number(process.env.MAX_INITIAL_MESSAGES || 500),
 

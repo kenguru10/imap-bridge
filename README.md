@@ -81,6 +81,21 @@ By default the bridge runs in plain text. For Outlook on a remote host you shoul
 
 A self-signed certificate will work, but Outlook will show a certificate warning that must be accepted.
 
+## Sending via Resend instead of the worker
+
+If you have a Resend SMTP API key, you can keep the bridge IMAP for incoming mail but let Resend handle outbound delivery. Set in `.env`:
+
+```env
+SMTP_RELAY_PROVIDER=resend
+RESEND_API_KEY=re_xxxxxxxx
+# Optional overrides:
+# RESEND_SMTP_HOST=smtp.resend.com
+# RESEND_SMTP_PORT=587
+# RESEND_SMTP_USER=resend
+```
+
+Outlook still talks to the bridge on `SMTP_PORT` for outgoing mail; the bridge authenticates the user, relays the message to Resend's SMTP server, and adds a copy to the local Sent folder.
+
 ## Configuration
 
 See `.env.example` for all options. The most important ones are:
