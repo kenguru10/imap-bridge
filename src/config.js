@@ -22,6 +22,15 @@ module.exports = {
   smtpSaveSentCopy: !['0', 'false', 'no', 'off'].includes((process.env.SMTP_SAVE_SENT_COPY || 'true').toLowerCase()),
 
   smtpRelayProvider: (process.env.SMTP_RELAY_PROVIDER || 'worker').toLowerCase(),
+
+  // Sender display-name overrides: "admin@amilora.net=Amilora,other@example.com=Other Name"
+  senderNameOverrides: (process.env.SENDER_NAME_OVERRIDES || '')
+    .split(',')
+    .reduce((acc, entry) => {
+      const idx = entry.indexOf('=');
+      if (idx > 0) acc[entry.slice(0, idx).trim().toLowerCase()] = entry.slice(idx + 1).trim();
+      return acc;
+    }, {}),
   resendSmtpHost: process.env.RESEND_SMTP_HOST || 'smtp.resend.com',
   resendSmtpPort: Number(process.env.RESEND_SMTP_PORT || 587),
   resendSmtpSecure: boolish(process.env.RESEND_SMTP_SECURE),

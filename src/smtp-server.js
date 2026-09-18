@@ -3,7 +3,7 @@ const { simpleParser } = require('mailparser');
 const nodemailer = require('nodemailer');
 const config = require('./config');
 
-async function sendViaResend(parsed, fromAddress, toAddresses, ccAddresses, bccAddresses) {
+async function sendViaResend(parsed, fromAddress, fromName, toAddresses, ccAddresses, bccAddresses) {
   const transporter = nodemailer.createTransport({
     host: config.resendSmtpHost,
     port: config.resendSmtpPort,
@@ -23,7 +23,7 @@ async function sendViaResend(parsed, fromAddress, toAddresses, ccAddresses, bccA
   }));
 
   const info = await transporter.sendMail({
-    from: fromAddress,
+    from: fromName ? { name: fromName, address: fromAddress } : fromAddress,
     to: toAddresses,
     cc: ccAddresses,
     bcc: bccAddresses,
@@ -76,6 +76,16 @@ function createSMTPServer(getSessionStore) {
           return callback(new Error(`No cloud-mail account matches ${fromAddress}`));
         }
 
+        // Resolve the sender display name: explicit override > account name > client-supplied name.
+        const fromName =
+          config.senderNameOverrides[(fromAddress || '').toLowerCase()] ||
+          account.name ||
+          (fromObj && fromObj.name) ||
+          '';
+        if (fromName && fromObj) {
+          fromObj.name = fromName; // so the local Sent copy matches
+        }
+
         const toAddresses = ((parsed.to && parsed.to.value) || []).map((a) => a.address);
         const ccAddresses = ((parsed.cc && parsed.cc.value) || []).map((a) => a.address);
         const bccAddresses = ((parsed.bcc && parsed.bcc.value) || []).map((a) => a.address);
@@ -89,7 +99,7 @@ function createSMTPServer(getSessionStore) {
         let emailResult;
 
         if (config.smtpRelayProvider === 'resend') {
-          emailResult = await sendViaResend(parsed, fromAddress, toAddresses, ccAddresses, bccAddresses);
+          emailResult = await sendViaResend(parsed, fromAddress, fromName, toAddresses, ccAddresses, bccAddresses);
         } else {
           const attachments = (parsed.attachments || []).map((att) => ({
             filename: att.filename,
@@ -102,6 +112,7 @@ function createSMTPServer(getSessionStore) {
 
           const payload = {
             accountId: account.accountId,
+            sendName: fromName || undefined,
             receiveEmail,
             subject: parsed.subject || '',
             text: parsed.text || '',

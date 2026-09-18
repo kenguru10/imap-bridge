@@ -168,6 +168,7 @@ See `.env.example` for all options. The most important ones are:
 - `SMTP_MAX_MESSAGE_SIZE` – max message size in bytes
 - `SMTP_MAX_CLIENTS` – max concurrent SMTP connections
 - `SMTP_SAVE_SENT_COPY` – whether the bridge adds a copy to Sent (default `true`)
+- `SENDER_NAME_OVERRIDES` – force the sender display name for specific addresses, e.g. `admin@amilora.net=Amilora`
 - `SMTP_RELAY_PROVIDER` – `worker` (default) or `resend`
 - `RESEND_SMTP_HOST` / `RESEND_SMTP_PORT` / `RESEND_SMTP_SECURE`
 - `RESEND_SMTP_USER` (usually `resend`)
