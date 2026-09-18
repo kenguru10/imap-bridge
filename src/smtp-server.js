@@ -6,9 +6,12 @@ function createSMTPServer(getSessionStore) {
   const hasTls = !!(config.tlsKeyPath && config.tlsCertPath);
   const options = {
     secure: false,
-    allowInsecureAuth: true,
+    allowInsecureAuth: !config.smtpRequireTls,
     authOptional: false,
+    authMethods: config.smtpAuthMethods,
     disabledCommands: hasTls ? [] : ['STARTTLS'],
+    size: config.smtpMaxMessageSize,
+    maxClients: config.smtpMaxClients,
     banner: 'cloud-mail-bridge ESMTP',
     onAuth: async (auth, session, callback) => {
       try {

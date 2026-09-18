@@ -88,6 +88,10 @@ See `.env.example` for all options. The most important ones are:
 - `CLOUD_MAIL_WORKER_URL` – public URL of your deployed `mail-worker`
 - `IMAP_HOST` / `IMAP_PORT`
 - `SMTP_HOST` / `SMTP_PORT`
+- `SMTP_REQUIRE_TLS` – require TLS before allowing SMTP authentication
+- `SMTP_AUTH_METHODS` – allowed mechanisms, e.g. `PLAIN,LOGIN`
+- `SMTP_MAX_MESSAGE_SIZE` – max message size in bytes
+- `SMTP_MAX_CLIENTS` – max concurrent SMTP connections
 - `POLL_INTERVAL_MS` – how often new mail is fetched from the worker
 - `MAX_INITIAL_MESSAGES` – how many messages to load per account on first login
 - `TLS_KEY_PATH` / `TLS_CERT_PATH` – enable TLS for IMAP/SMTP (recommended for remote hosts)
