@@ -1,0 +1,18 @@
+services:
+  cloud-mail-bridge:
+    build: .
+    container_name: cloud-mail-bridge
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      # Plain IMAP / SMTP submission
+      - "143:143"
+      - "587:587"
+      # TLS variants (only used when TLS_KEY_PATH / TLS_CERT_PATH are set)
+      - "993:993"
+      - "465:465"
+    volumes:
+      # Mount the directory that contains your TLS key/cert files.
+      # Update the host path to match TLS_KEY_PATH / TLS_CERT_PATH in .env.
+      - ./certs:/app/certs:ro

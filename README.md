@@ -24,11 +24,31 @@ Cloudflare Workers can receive email via the `email` event and store it in D1/R2
 
 ## Quick start
 
+### Run with Node.js
+
 ```bash
 cp .env.example .env
 # edit .env and set CLOUD_MAIL_WORKER_URL to your deployed worker URL
 npm install
 npm start
+```
+
+### Run with Docker Compose
+
+```bash
+cp .env.example .env
+# edit .env, then
+mkdir -p certs          # put key.pem / cert.pem here if you use TLS
+docker compose up -d
+```
+
+The compose file exposes ports `143`, `587`, `993` and `465`. If you change `IMAP_PORT` or `SMTP_PORT` in `.env`, update the published ports in `docker-compose.yml` accordingly.
+
+If you use TLS inside Docker, put the certificate files in the `certs/` folder and reference them with the container path in `.env`, e.g.:
+
+```env
+TLS_KEY_PATH=/app/certs/key.pem
+TLS_CERT_PATH=/app/certs/cert.pem
 ```
 
 Then add an account to Outlook:
