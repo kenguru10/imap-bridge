@@ -81,6 +81,53 @@ By default the bridge runs in plain text. For Outlook on a remote host you shoul
 
 A self-signed certificate will work, but Outlook will show a certificate warning that must be accepted.
 
+### Getting a certificate for IMAPS (port 993)
+
+#### Option 1: Let's Encrypt (recommended for production)
+
+If you own a domain and the bridge is reachable on the public internet, get a free trusted certificate:
+
+```bash
+# Install certbot, then run:
+sudo certbot certonly --standalone -d mail.yourdomain.com
+```
+
+This creates:
+
+```
+/etc/letsencrypt/live/mail.yourdomain.com/fullchain.pem
+/etc/letsencrypt/live/mail.yourdomain.com/privkey.pem
+```
+
+Use them in `.env`:
+
+```env
+IMAP_PORT=993
+SMTP_PORT=465
+TLS_CERT_PATH=/etc/letsencrypt/live/mail.yourdomain.com/fullchain.pem
+TLS_KEY_PATH=/etc/letsencrypt/live/mail.yourdomain.com/privkey.pem
+```
+
+Certbot renews automatically. If you run the bridge in Docker, mount `/etc/letsencrypt` into the container and restart it after renewal.
+
+#### Option 2: Self-signed certificate (testing only)
+
+A quick self-signed cert is fine for local testing:
+
+```bash
+./scripts/generate-selfsigned.sh mail.yourdomain.com
+```
+
+Then set:
+
+```env
+IMAP_PORT=993
+TLS_CERT_PATH=/app/certs/cert.pem
+TLS_KEY_PATH=/app/certs/key.pem
+```
+
+Outlook will warn about the certificate; accept/trust it to continue.
+
 ## Sending via Resend instead of the worker
 
 If you have a Resend SMTP API key, you can keep the bridge IMAP for incoming mail but let Resend handle outbound delivery. Set in `.env`:

@@ -33,4 +33,5 @@ module.exports = {
 
   tlsKeyPath: process.env.TLS_KEY_PATH || '',
   tlsCertPath: process.env.TLS_CERT_PATH || '',
+  tlsKeyPassphrase: process.env.TLS_KEY_PASSPHRASE || undefined,
 };

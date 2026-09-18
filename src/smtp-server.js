@@ -135,13 +135,12 @@ function createSMTPServer(getSessionStore) {
     const fs = require('fs');
     const key = fs.readFileSync(config.tlsKeyPath);
     const cert = fs.readFileSync(config.tlsCertPath);
+    const tlsBase = { key, cert, passphrase: config.tlsKeyPassphrase };
     if (config.smtpPort === 465) {
       options.secure = true;
-      options.key = key;
-      options.cert = cert;
+      Object.assign(options, tlsBase);
     } else {
-      options.key = key;
-      options.cert = cert;
+      Object.assign(options, tlsBase);
     }
   }
 
