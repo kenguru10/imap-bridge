@@ -1,13 +1,8 @@
-# Credentials and generated files
-dovecot/passwd
-bridge/config.json
-dovecot/certs/*
-bridge/certs/*
-!dovecot/certs/.gitkeep
-!bridge/certs/.gitkeep
-
-# Runtime state
-bridge-state.json
-
-# Node modules
-bridge/node_modules
+node_modules/
+.env
+*.pem
+*.key
+*.crt
+data/
+logs/
+.DS_Store

@@ -1,206 +1,97 @@
 # Cloud Mail IMAP/SMTP Bridge
 
-Use **macOS Mail** (or any IMAP/SMTP email client) with the [Cloud Mail](../README.md) project.
+This is a small bridge that turns your [cloud-mail](https://github.com/maillab/cloud-mail) Cloudflare Worker into a regular IMAP + SMTP server, so you can add it to Outlook (or any other desktop/mobile mail client).
 
-This bridge runs as Docker containers on a server and translates between Cloud Mail's REST API and standard IMAP/SMTP protocols.
+## Why a bridge?
 
-```
-┌─────────────┐      IMAP       ┌──────────┐     Maildir      ┌──────────────┐
-│ macOS Mail  │ ◄──────────────► │ Dovecot  │ ◄──────────────► │ Sync Bridge  │
-└─────────────┘                  └──────────┘                  └──────┬───────┘
-                                                                      │ HTTPS
-                                                                      ▼
-                                                             ┌─────────────────┐
-                                                             │  Cloud Mail API │
-                                                             └─────────────────┘
+Cloudflare Workers can receive email via the `email` event and store it in D1/R2, but Workers cannot expose a long-lived TCP IMAP/SMTP server. This bridge runs on a normal server (or your laptop) and:
 
-┌─────────────┐      SMTP       ┌──────────────────────────────────────────────┐
-│ macOS Mail  │ ───────────────►│  SMTP Bridge  ──►  Cloud Mail /email/send    │
-└─────────────┘                 └──────────────────────────────────────────────┘
-```
+- logs into the worker using your cloud-mail credentials
+- polls the worker REST API for new mail
+- reconstructs real RFC 2822 MIME messages from the worker's parsed data
+- serves them over IMAP (`imap-core`)
+- accepts outbound mail over SMTP (`smtp-server`) and forwards it through the worker's `/api/email/send`
 
-## Features
+## What works
 
-- 📬 **Read mail** via IMAP with per-address folders.
-- ✉️ **Send mail** via SMTP through Cloud Mail.
-- 🗂️ Mailboxes: `INBOX`, per-account folders, `Sent`, `Trash`, `Starred`, `Drafts`.
-- 🔒 TLS support for both IMAP and SMTP.
-- 🐳 Runs entirely in Docker.
+- Outlook IMAP account setup against port `143`
+- INBOX, Sent and Trash folders
+- Fetching headers, bodies, attachments and full raw messages
+- Marking messages read/unread (synced back to the worker)
+- Deleting messages (synced back to the worker)
+- Sending mail through SMTP submission (`587`)
+- Sent copies appear in the Sent folder
 
-## Quick Start
-
-### Option A: Interactive setup
+## Quick start
 
 ```bash
-cd imap-bridge
-cp bridge/config.json.example bridge/config.json
-# Edit bridge/config.json with your credentials
-./setup.sh
+cp .env.example .env
+# edit .env and set CLOUD_MAIL_WORKER_URL to your deployed worker URL
+npm install
+npm start
 ```
 
-### Option B: Manual setup
-
-```bash
-cd imap-bridge
-
-# 1. Configure
-cp bridge/config.json.example bridge/config.json
-# Edit bridge/config.json with your Cloud Mail URL and credentials
-
-# 2. Generate IMAP password hash (requires OpenSSL)
-node generate-passwd.js cloudmail "your-local-password" >> dovecot/passwd
-
-# 3. Run
-docker compose up --build -d
-```
-
-Then add an account in macOS Mail:
+Then add an account to Outlook:
 
 | Setting | Value |
-|---|---|
-| Incoming host | your-server |
-| IMAP user | `cloudmail` |
-| IMAP port | `993` (SSL) or `143` (STARTTLS) |
-| Outgoing host | your-server |
-| SMTP port | `587` (STARTTLS) or `465` (SSL) |
+|---------|-------|
+| Email address | the cloud-mail account/alias you want to send from |
+| Account type | IMAP |
+| Incoming mail server | `your-bridge-host` port `143` |
+| Outgoing mail server (SMTP) | `your-bridge-host` port `587` |
+| Username | your cloud-mail login email |
+| Password | your cloud-mail login password |
 
-For detailed installation steps, firewall setup, certificate configuration, and macOS Mail screenshots, see **[INSTALL.md](INSTALL.md)**.
+> The IMAP account will show a **unified INBOX** containing mail for every alias owned by that user. When you send, Outlook supplies the `From` address and the bridge picks the matching cloud-mail account automatically.
 
-## How It Works
+## Using a secure connection
 
-1. **Dovecot** serves a Maildir mailbox over IMAP.
-2. The **bridge** periodically logs into Cloud Mail, lists your accounts and emails, and writes them into the shared Maildir.
-3. When you send mail from macOS Mail, the **SMTP bridge** forwards it to Cloud Mail's send API.
+By default the bridge runs in plain text. For Outlook on a remote host you should enable TLS:
 
-## Folder Mapping
+1. Obtain a certificate/key pair (e.g. from Let's Encrypt, or generate a self-signed pair).
+2. Set `TLS_KEY_PATH` and `TLS_CERT_PATH` in `.env`.
+3. Use the matching Outlook port/encryption mode:
 
-| Cloud Mail | IMAP folder |
-|---|---|
-| `a@example.com` | `a@example.com` |
-| `b@example.com` | `b@example.com` |
-| Sent mail | `Sent` |
-| Deleted mail | `Trash` |
-| Starred mail | `Starred` |
+| Protocol | Port | Outlook encryption | What the bridge does |
+|----------|------|--------------------|----------------------|
+| IMAP     | 993  | SSL/TLS            | implicit TLS (IMAPS) |
+| IMAP     | 143  | STARTTLS / TLS     | opportunistic TLS upgrade |
+| SMTP     | 465  | SSL/TLS            | implicit TLS (SMTPS) |
+| SMTP     | 587  | STARTTLS / TLS     | opportunistic TLS upgrade |
 
-## Two-Way Sync
-
-| Action in macOS Mail | Result in Cloud Mail |
-|---|---|
-| New email arrives | Pulled to Maildir on next sync |
-| Mark read/unread | Read state synced from Cloud Mail → Maildir |
-| Move to Trash | Calls `/email/delete` |
-| Send message | Forwarded via `/email/send` |
+A self-signed certificate will work, but Outlook will show a certificate warning that must be accepted.
 
 ## Configuration
 
-See `bridge/config.json.example` for all options. Key fields:
+See `.env.example` for all options. The most important ones are:
 
-```json
-{
-  "cloudMail": {
-    "baseUrl": "https://your-worker.workers.dev",
-    "apiBaseUrl": "https://your-worker.workers.dev/api",
-    "email": "your-cloud-mail-user@example.com",
-    "password": "your-cloud-mail-password"
-  },
-  "cloudMailLogins": [
-    {
-      "email": "second-cloud-mail-login@example.com",
-      "password": "second-cloud-mail-password"
-    }
-  ],
-  "imap": {
-    "user": "cloudmail",
-    "password": "your-local-imap-password",
-    "users": [ "admin@amilora.net" ]
-  }
-}
+- `CLOUD_MAIL_WORKER_URL` – public URL of your deployed `mail-worker`
+- `IMAP_HOST` / `IMAP_PORT`
+- `SMTP_HOST` / `SMTP_PORT`
+- `POLL_INTERVAL_MS` – how often new mail is fetched from the worker
+- `MAX_INITIAL_MESSAGES` – how many messages to load per account on first login
+- `TLS_KEY_PATH` / `TLS_CERT_PATH` – enable TLS for IMAP/SMTP (recommended for remote hosts)
+
+## Project layout
+
+```
+src/
+  index.js          # entry point, starts IMAP + SMTP and caches user stores
+  worker-client.js  # REST client for the cloud-mail worker
+  store.js          # in-memory mail cache + polling
+  mime-builder.js   # rebuilds RFC 2822 messages from worker data
+  imap-server.js    # IMAP server handlers (imap-core)
+  smtp-server.js    # SMTP submission handlers (smtp-server)
+  config.js         # .env loading
 ```
 
-### Multiple Cloud Mail logins
+## Limitations & future improvements
 
-`cloudMail` is the primary login. Add any number of **additional** Cloud Mail
-logins (different email/password pairs) under `cloudMailLogins`.
-
-Each Cloud Mail **account** (the login's own address plus every sub-account
-discovered via `/account/list`) is isolated:
-
-- it has its own IMAP identity — the login's own address uses the login's
-  user (e.g. `cloudmail` or `login.b@example.com`), sub-accounts use their
-  email address as the user (e.g. `admin@amilora.net`),
-- it syncs its own Inbox/Sent/Trash only (cursors are per account, mail is
-  never mixed between accounts),
-- it gets its own Maildir tree under `/var/mail/<imap-user>/Maildir`.
-
-By default an additional login's Dovecot user is `login.<email>` (e.g.
-`login.b@example.com`). To serve it under a different username (e.g. the bare
-email), set `imapUser` in the login entry — the synced Maildir follows it
-(`maildirBase` may still override explicitly):
-
-```json
-"cloudMailLogins": [
-  {
-    "email": "b@example.com",
-    "password": "...",
-    "imapUser": "b@example.com"
-  }
-]
-```
-
-So in macOS Mail / Outlook you log in once per Cloud Mail address and only
-see that address's mail.
-
-Sub-accounts are discovered at runtime, so the bridge cannot know their names
-at setup. Declare them in `config.json` (`imap.users`) so they get Dovecot
-users (all share the local IMAP password), then regenerate `dovecot/passwd`:
-
-```json
-"imap": { "users": [ "admin@amilora.net" ] }
-```
-
-```bash
-node generate-passwd.js --all --password <imap-password> > dovecot/passwd
-docker compose up -d
-```
-
-## Requirements
-
-- Docker + Docker Compose
-- OpenSSL (for password hashing)
-- A deployed Cloud Mail worker
-- A Cloud Mail user account with at least one email address
-
-## Troubleshooting
-
-### Cannot connect from macOS Mail
-
-- Open ports `143`, `993`, and `587` in your firewall.
-- Check Dovecot logs: `docker logs cloud-mail-dovecot`
-- Verify `dovecot/passwd` contains a valid SHA512-CRYPT hash.
-
-### Emails not syncing
-
-- Check bridge logs: `docker logs cloud-mail-bridge`
-- Verify `cloudMail.apiBaseUrl`, `email`, and `password`.
-- Ensure the Cloud Mail user can call `/account/list` and `/email/list`.
-
-### Sending fails
-
-- Confirm the `From` address in macOS Mail matches a Cloud Mail account you own.
-- Check SMTP auth uses the same user/password as `bridge/config.json`.
-
-## Security Notes
-
-- Replace the auto-generated self-signed certificates with real ones for production.
-- Use a strong local IMAP/SMTP password.
-- Consider running the server behind a VPN or restricting access by IP.
-
-## Limitations
-
-- One Cloud Mail user per bridge instance.
-- Sync is pull-based polling (default every 60s), not push/IDLE.
-- Read-state sync is currently one-way (Cloud Mail → Maildir).
+- **Plain text by default**: the server listens in plain text. Use a reverse proxy or provide `TLS_KEY_PATH`/`TLS_CERT_PATH` for encryption.
+- **In-memory cache**: message metadata and raw MIME are held in memory. Restarting the bridge clears the cache and Outlook will re-sync. For production use you may want to persist the cache to disk or a local Maildir.
+- **Cc/Bcc**: the current cloud-mail `/api/email/send` only supports a `receiveEmail` list, so Cc recipients are currently included as envelope recipients rather than as a separate Cc header in the worker UI.
+- **Folder mapping**: the bridge exposes a single unified INBOX. Per-alias folders can be added by extending `store.js`.
 
 ## License
 
-MIT — same as the Cloud Mail project.
+MIT

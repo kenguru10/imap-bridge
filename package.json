@@ -1,0 +1,30 @@
+{
+  "name": "cloud-mail-imap-bridge",
+  "version": "0.1.0",
+  "description": "IMAP/SMTP bridge for cloud-mail (Cloudflare Workers) so you can add it to Outlook",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "keywords": [
+    "imap",
+    "smtp",
+    "cloudflare-workers",
+    "cloud-mail",
+    "outlook"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "imap-core": "^1.0.0",
+    "mailparser": "^3.7.1",
+    "nodemailer": "^6.9.15",
+    "redis": "^6.2.1",
+    "smtp-server": "^3.13.6"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
