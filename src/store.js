@@ -1,4 +1,5 @@
 const { buildRaw } = require('./mime-builder');
+const { simpleParser } = require('mailparser');
 const config = require('./config');
 
 function createFolder(path, specialUse) {
@@ -208,6 +209,54 @@ class MailStore {
     binaryInsert(sent.messages, msg);
     this.emailMap.set(emailId, { folder: sent, message: msg });
     if (emailId >= sent.uidNext) sent.uidNext = emailId + 1;
+  }
+
+  async appendRaw(mailbox, rawBuffer, flags, date) {
+    const folder = this.folders.get(mailbox);
+    if (!folder || mailbox !== 'Sent') return null;
+
+    const parsed = await simpleParser(rawBuffer, { keepCidLinks: true });
+    const emailId = Date.now();
+    const from = parsed.from && parsed.from.value && parsed.from.value[0];
+    const row = {
+      emailId,
+      sendEmail: from ? from.address : '',
+      name: from ? from.name || '' : '',
+      subject: parsed.subject || '',
+      text: parsed.text || '',
+      content: parsed.html || '',
+      recipient: JSON.stringify((parsed.to && parsed.to.value) || []),
+      cc: JSON.stringify((parsed.cc && parsed.cc.value) || []),
+      bcc: JSON.stringify((parsed.bcc && parsed.bcc.value) || []),
+      messageId: parsed.messageId,
+      createTime: date ? new Date(date).toISOString() : new Date().toISOString(),
+      unread: 1,
+    };
+
+    const attachments = (parsed.attachments || []).map((att) => ({
+      filename: att.filename,
+      content: att.content,
+      mimeType: att.mimeType,
+      contentId: att.cid,
+      disposition: att.contentDisposition,
+      type: att.cid ? 1 : 0,
+      key: '',
+    }));
+
+    const raw = await buildRaw(row, attachments, this.baseUrl);
+    const msg = {
+      uid: emailId,
+      flags: flags && flags.length ? flags : ['\\Seen'],
+      date: row.createTime ? new Date(row.createTime) : new Date(),
+      internaldate: row.createTime ? new Date(row.createTime) : new Date(),
+      modseq: emailId,
+      raw,
+    };
+
+    binaryInsert(folder.messages, msg);
+    this.emailMap.set(emailId, { folder, message: msg });
+    if (emailId >= folder.uidNext) folder.uidNext = emailId + 1;
+    return { uidValidity: folder.uidValidity, uid: emailId };
   }
 
   async markSeen(emailIds) {

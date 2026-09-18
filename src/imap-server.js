@@ -227,11 +227,24 @@ function createIMAPServer(getSessionStore) {
     callback(null, true);
   };
 
-  server.onAppend = (mailbox, flags, date, raw, session, callback) => {
+  server.onAppend = async (mailbox, flags, date, raw, session, callback) => {
     const folder = session.user.store.folders.get(mailbox);
     if (!folder) return callback(null, 'TRYCREATE');
-    // We accept APPEND (e.g. Outlook saving a sent copy) but do not duplicate it,
-    // because sent mail is already stored by the worker when SMTP sends it.
+
+    // We only keep APPENDs to the Sent folder. Other mailboxes (e.g. Drafts)
+    // are accepted but not persisted in this bridge.
+    if (mailbox === 'Sent') {
+      try {
+        const appendResult = await session.user.store.appendRaw(mailbox, raw, flags, date);
+        if (appendResult) {
+          return callback(null, true, appendResult);
+        }
+      } catch (err) {
+        console.error('APPEND to Sent failed:', err.message);
+        return callback(new Error('Append failed'));
+      }
+    }
+
     callback(null, true);
   };
 

@@ -19,6 +19,7 @@ module.exports = {
     .filter(Boolean),
   smtpMaxMessageSize: Number(process.env.SMTP_MAX_MESSAGE_SIZE || 52428800),
   smtpMaxClients: Number(process.env.SMTP_MAX_CLIENTS || 100),
+  smtpSaveSentCopy: !['0', 'false', 'no', 'off'].includes((process.env.SMTP_SAVE_SENT_COPY || 'true').toLowerCase()),
 
   smtpRelayProvider: (process.env.SMTP_RELAY_PROVIDER || 'worker').toLowerCase(),
   resendSmtpHost: process.env.RESEND_SMTP_HOST || 'smtp.resend.com',

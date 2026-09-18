@@ -96,6 +96,19 @@ RESEND_API_KEY=re_xxxxxxxx
 
 Outlook still talks to the bridge on `SMTP_PORT` for outgoing mail; the bridge authenticates the user, relays the message to Resend's SMTP server, and adds a copy to the local Sent folder.
 
+## Troubleshooting
+
+### Sent emails do not appear in the Sent folder
+
+1. **Make sure Outlook is sending through the bridge, not directly through Resend.**  
+   If you put `smtp.resend.com` in Outlook's outgoing server settings, the bridge never sees the message and cannot add a copy to the IMAP Sent folder. Either:
+   - point Outlook SMTP to the bridge (`SMTP_HOST:SMTP_PORT`) and set `SMTP_RELAY_PROVIDER=resend`, or
+   - configure Outlook to save sent copies in the IMAP Sent folder (some Outlook versions do this automatically).
+
+2. **Check the bridge logs** when you send. If the worker or Resend rejects the message, no copy is saved.
+
+3. **Avoid duplicate copies.** If your client appends its own sent copy and the bridge also adds one, you will see duplicates. Set `SMTP_SAVE_SENT_COPY=false` to let the client handle it.
+
 ## Configuration
 
 See `.env.example` for all options. The most important ones are:
@@ -107,6 +120,11 @@ See `.env.example` for all options. The most important ones are:
 - `SMTP_AUTH_METHODS` – allowed mechanisms, e.g. `PLAIN,LOGIN`
 - `SMTP_MAX_MESSAGE_SIZE` – max message size in bytes
 - `SMTP_MAX_CLIENTS` – max concurrent SMTP connections
+- `SMTP_SAVE_SENT_COPY` – whether the bridge adds a copy to Sent (default `true`)
+- `SMTP_RELAY_PROVIDER` – `worker` (default) or `resend`
+- `RESEND_SMTP_HOST` / `RESEND_SMTP_PORT` / `RESEND_SMTP_SECURE`
+- `RESEND_SMTP_USER` (usually `resend`)
+- `RESEND_API_KEY`
 - `POLL_INTERVAL_MS` – how often new mail is fetched from the worker
 - `MAX_INITIAL_MESSAGES` – how many messages to load per account on first login
 - `TLS_KEY_PATH` / `TLS_CERT_PATH` – enable TLS for IMAP/SMTP (recommended for remote hosts)

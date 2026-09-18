@@ -114,7 +114,14 @@ function createSMTPServer(getSessionStore) {
         }
 
         // Save a copy to the local Sent folder so Outlook sees it.
-        await store.appendSentCopy(parsed, emailResult);
+        if (config.smtpSaveSentCopy) {
+          try {
+            await store.appendSentCopy(parsed, emailResult);
+            console.log(`[SMTP] saved sent copy for ${fromAddress}: ${parsed.subject || '(no subject)'}`);
+          } catch (appendErr) {
+            console.error('Failed to save sent copy:', appendErr.message);
+          }
+        }
 
         callback(null, 'Message accepted');
       } catch (err) {
