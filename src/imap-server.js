@@ -13,6 +13,31 @@ class NoopNotifier {
   }
 }
 
+function streamToString(stream) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    stream.on('data', (c) => chunks.push(c));
+    stream.on('end', () => resolve(Buffer.concat(chunks).toString('binary')));
+    stream.on('error', reject);
+  });
+}
+
+async function resolveValues(query, message) {
+  const values = session_getQueryResponse(query, message);
+  const out = [];
+  for (const v of values) {
+    const stream = v && v.type === 'stream' ? v.value : v;
+    if (stream && typeof stream.pipe === 'function') {
+      out.push(await streamToString(stream));
+    } else {
+      out.push(v);
+    }
+  }
+  return out;
+}
+
+const session_getQueryResponse = require('imap-core/lib/imap-tools').getQueryResponse;
+
 function createIMAPServer(getSessionStore) {
   const hasTls = !!(config.tlsKeyPath && config.tlsCertPath);
   const options = {
@@ -111,16 +136,16 @@ function createIMAPServer(getSessionStore) {
       }
     }
 
-    folder.messages.forEach((message) => {
-      if (options.messages.includes(message.uid)) {
-        session.writeStream.write(
-          session.formatResponse('FETCH', message.uid, {
-            query: options.query,
-            values: session.getQueryResponse(options.query, message),
-          })
-        );
-      }
-    });
+    for (const message of folder.messages) {
+      if (!options.messages.includes(message.uid)) continue;
+      const values = await resolveValues(options.query, message);
+      session.writeStream.write(
+        session.formatResponse('FETCH', message.uid, {
+          query: options.query,
+          values,
+        })
+      );
+    }
 
     callback(null, true);
   };
