@@ -40,6 +40,10 @@ module.exports = {
   pollIntervalMs: Number(process.env.POLL_INTERVAL_MS || 30000),
   maxInitialMessages: Number(process.env.MAX_INITIAL_MESSAGES || 500),
 
+  // When true, show extra logs (startup, IMAP errors, poll errors, auth failures).
+  // SMTP send-pipeline logs are always shown. Default: off.
+  verbose: boolish(process.env.VERBOSE),
+
   tlsKeyPath: process.env.TLS_KEY_PATH || '',
   tlsCertPath: process.env.TLS_CERT_PATH || '',
   tlsKeyPassphrase: process.env.TLS_KEY_PASSPHRASE || undefined,

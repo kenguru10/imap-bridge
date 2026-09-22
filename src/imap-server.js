@@ -72,7 +72,7 @@ function createIMAPServer(getSessionStore) {
         },
       });
     } catch (err) {
-      console.error('IMAP auth failed:', err.message);
+      if (config.verbose) console.error('IMAP auth failed:', err.message);
       callback(new Error('Authentication failed'));
     }
   };
@@ -131,7 +131,7 @@ function createIMAPServer(getSessionStore) {
             }
           }
         } catch (e) {
-          console.error('Failed to mark seen:', e.message);
+          if (config.verbose) console.error('Failed to mark seen:', e.message);
         }
       }
     }
@@ -206,7 +206,7 @@ function createIMAPServer(getSessionStore) {
       try {
         await session.user.store.markSeen(seenIds);
       } catch (e) {
-        console.error('Failed to persist read state:', e.message);
+        if (config.verbose) console.error('Failed to persist read state:', e.message);
       }
     }
 
@@ -245,7 +245,7 @@ function createIMAPServer(getSessionStore) {
       try {
         await session.user.store.deleteMessages(deletedIds);
       } catch (e) {
-        console.error('Failed to delete messages:', e.message);
+        if (config.verbose) console.error('Failed to delete messages:', e.message);
       }
     }
 
@@ -265,7 +265,7 @@ function createIMAPServer(getSessionStore) {
           return callback(null, true, appendResult);
         }
       } catch (err) {
-        console.error('APPEND to Sent failed:', err.message);
+        if (config.verbose) console.error('APPEND to Sent failed:', err.message);
         return callback(new Error('Append failed'));
       }
     }
@@ -282,7 +282,7 @@ function createIMAPServer(getSessionStore) {
   server.onCopy = (mailbox, update, session, callback) => callback(null, true);
 
   server.on('error', (err) => {
-    console.error('IMAP server error:', err.stack || err.message);
+    if (config.verbose) console.error('IMAP server error:', err.stack || err.message);
   });
 
   return server;

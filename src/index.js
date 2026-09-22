@@ -29,15 +29,15 @@ const imapServer = createIMAPServer(getSessionStore);
 const smtpServer = createSMTPServer(getSessionStore);
 
 imapServer.listen(config.imapPort, config.imapHost, () => {
-  console.log(`IMAP server listening on ${config.imapHost}:${config.imapPort}`);
+  if (config.verbose) console.log(`IMAP server listening on ${config.imapHost}:${config.imapPort}`);
 });
 
 smtpServer.listen(config.smtpPort, config.smtpHost, () => {
-  console.log(`SMTP server listening on ${config.smtpHost}:${config.smtpPort}`);
+  if (config.verbose) console.log(`SMTP server listening on ${config.smtpHost}:${config.smtpPort}`);
 });
 
 process.on('SIGINT', () => {
-  console.log('\nShutting down...');
+  if (config.verbose) console.log('\nShutting down...');
   for (const store of storeCache.values()) store.stop();
   imapServer.close(() => {
     smtpServer.close(() => {

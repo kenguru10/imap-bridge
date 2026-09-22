@@ -135,7 +135,7 @@ class MailStore {
 
   _startPolling() {
     if (this.pollTimer) clearInterval(this.pollTimer);
-    this.pollTimer = setInterval(() => this._poll().catch((e) => console.error('Poll error', e)), config.pollIntervalMs);
+    this.pollTimer = setInterval(() => this._poll().catch((e) => { if (config.verbose) console.error('Poll error', e); }), config.pollIntervalMs);
   }
 
   async _poll() {
