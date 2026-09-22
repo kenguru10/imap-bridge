@@ -15,4 +15,4 @@ services:
     volumes:
       # Mount the directory that contains your TLS key/cert files.
       # Update the host path to match TLS_KEY_PATH / TLS_CERT_PATH in .env.
-      - /etc/letsencrypt/live/mail.amilora.net:/app/certs:ro
+      - /etc/letsencrypt/live/mail.amilora.net:/etc/letsencrypt/live/mail.amilora.net:ro
