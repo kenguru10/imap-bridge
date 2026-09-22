@@ -26,6 +26,27 @@ function binaryInsert(arr, message) {
   arr.splice(lo, 0, message);
 }
 
+function parseResendDate(s) {
+  // Resend returns e.g. "2026-09-22 08:45:34.543000+00" (microseconds, +00 TZ).
+  if (!s) return null;
+  const m = String(s).match(
+    /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(?:\s*([+-])(\d{2}):?(\d{2})?)?$/
+  );
+  if (!m) {
+    const d = new Date(s);
+    return Number.isNaN(d.getTime()) ? null : d.getTime();
+  }
+  const [, y, mo, d, h, mi, se, frac = '', sign = '+', oh = '0', om = '0'] = m;
+  let t = Date.UTC(+y, +mo - 1, +d, +h, +mi, +se, Math.round((frac || '0').padEnd(3, '0').slice(0, 3)));
+  const offset = (+oh * 60 + +om) * (sign === '-' ? 1 : -1) * 60000; // subtract tz offset
+  return t + offset;
+}
+
+// Resend ids are uuidv7: chronologically sortable as strings (time prefix first).
+function isOlderResendEmail(a, b) {
+  return String(a) < String(b);
+}
+
 class MailStore {
   constructor(client) {
     this.client = client;
@@ -37,9 +58,8 @@ class MailStore {
     this.lastReceivedIds = new Map(); // accountId -> emailId
     this.pollTimer = null;
     this.resendSyncedIds = new Set(); // Resend email ids already synced into Sent
-    this.resendNextPage = null; // pagination cursor for incremental sync
+    this.resendCursorId = null; // oldest synced email id; 'after' param for next poll
     this.resendUidSeq = null; // numeric uid allocator for Resend-synced messages
-    this.resendSentUidMax = 0;
   }
 
   async init() {
@@ -94,30 +114,38 @@ class MailStore {
     return res.json();
   }
 
-  // Pull real sent emails from the Resend API into the local Sent folder.
-  // Initial run loads the first page(s); subsequent runs fetch only the
-  // saved next-page cursor so newly sent mail appears between polls.
+  // Pull real sent emails from the Resend API (GET /emails) into the local
+  // Sent folder. The list response only has metadata (snake_case, no
+  // html/text), so each email's content is fetched via GET /emails/{id}.
+  // Pagination is id-based: 'after' = oldest synced email id.
   async syncResendSent() {
     if (!this.resendSyncEnabled()) return;
     const sent = this.folders.get('Sent');
     if (!sent) return;
 
-    const page = this.resendNextPage || 1;
-    const json = await this.resendRequest('/emails', {
-      limit: config.resendSentPageSize,
-      page,
-    });
+    const params = { limit: config.resendSentPageSize };
+    if (this.resendCursorId) params.after = this.resendCursorId;
+    const json = await this.resendRequest('/emails', params);
 
     const emails = (json.data || []).slice().reverse(); // oldest first
     for (const em of emails) {
       if (this.resendSyncedIds.has(em.id)) continue;
+
+      let detail = em;
+      try {
+        detail = { ...em, ...(await this.resendRequest(`/emails/${em.id}`)) };
+      } catch (e) {
+        if (config.verbose) console.error(`Resend detail fetch failed for ${em.id}:`, e.message);
+      }
+
       const uid = this._nextResendSentUid();
-      const raw = await this._resendEmailToRaw(em);
+      const raw = await this._resendEmailToRaw(detail);
+      const ts = parseResendDate(detail.created_at);
       const msg = {
         uid,
         flags: ['\\Seen'],
-        date: em.createdAt ? new Date(em.createdAt) : new Date(),
-        internaldate: em.createdAt ? new Date(em.createdAt) : new Date(),
+        date: ts ? new Date(ts) : new Date(),
+        internaldate: ts ? new Date(ts) : new Date(),
         modseq: uid,
         raw,
       };
@@ -129,7 +157,14 @@ class MailStore {
       }
     }
 
-    this.resendNextPage = json.has_next_page ? json.next_page : null;
+    // The list is newest-first, so the last entry is the batch's oldest id.
+    const batch = json.data || [];
+    const oldest = batch.length ? batch[batch.length - 1].id : null;
+    if (oldest) {
+      if (!this.resendCursorId || isOlderResendEmail(oldest, this.resendCursorId)) {
+        this.resendCursorId = oldest;
+      }
+    }
     this._recomputeUidNext();
   }
 
@@ -164,7 +199,8 @@ class MailStore {
       recipient: JSON.stringify(toMap(em.to)),
       cc: JSON.stringify(toMap(em.cc)),
       bcc: JSON.stringify(toMap(em.bcc)),
-      createTime: em.createdAt || new Date().toISOString(),
+      createTime: new Date(parseResendDate(em.created_at) || Date.now()).toISOString(),
+      messageId: em.message_id || em.messageId || undefined,
       unread: 1,
     };
     // NOTE: attachment files referenced in the list response are not
@@ -253,7 +289,7 @@ class MailStore {
   }
 
   async _poll() {
-    if (this.resendSyncEnabled() && this.resendNextPage) {
+    if (this.resendSyncEnabled() && this.resendCursorId) {
       await this.syncResendSent();
     }
 
