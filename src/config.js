@@ -36,9 +36,11 @@ module.exports = {
   resendSmtpSecure: boolish(process.env.RESEND_SMTP_SECURE),
   resendSmtpUser: process.env.RESEND_SMTP_USER || 'resend',
   resendApiKey: process.env.RESEND_API_KEY || '',
+  resendApiBase: process.env.RESEND_API_BASE || 'https://api.resend.com',
 
   pollIntervalMs: Number(process.env.POLL_INTERVAL_MS || 30000),
   maxInitialMessages: Number(process.env.MAX_INITIAL_MESSAGES || 500),
+  resendSentPageSize: Number(process.env.RESEND_SENT_PAGE_SIZE || 100),
 
   // When true, show extra logs (startup, IMAP errors, poll errors, auth failures).
   // SMTP send-pipeline logs are always shown. Default: off.

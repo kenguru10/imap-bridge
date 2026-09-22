@@ -36,6 +36,10 @@ class MailStore {
     this.emailMap = new Map(); // emailId -> { folder, index }
     this.lastReceivedIds = new Map(); // accountId -> emailId
     this.pollTimer = null;
+    this.resendSyncedIds = new Set(); // Resend email ids already synced into Sent
+    this.resendNextPage = null; // pagination cursor for incremental sync
+    this.resendUidSeq = null; // numeric uid allocator for Resend-synced messages
+    this.resendSentUidMax = 0;
   }
 
   async init() {
@@ -54,8 +58,118 @@ class MailStore {
       await this._loadTypeForAccount(account, 0, 'INBOX');
     }
 
+    if (this.resendSyncEnabled()) {
+      try {
+        await this.syncResendSent();
+      } catch (e) {
+        if (config.verbose) console.error('Initial Resend sent sync failed:', e.message);
+      }
+    }
+
     this._recomputeUidNext();
     this._startPolling();
+  }
+
+  resendSyncEnabled() {
+    // Enabled by default when an API key is configured; opt out with
+    // RESEND_SYNC_SENT=false (the key may also be used for SMTP relay alone).
+    if (!config.resendApiKey) return false;
+    const raw = (process.env.RESEND_SYNC_SENT || 'true').toLowerCase();
+    return !['0', 'false', 'no', 'off'].includes(raw);
+  }
+
+  // GET https://api.resend.com/emails
+  async resendRequest(path, params) {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params || {})) {
+      if (v !== undefined && v !== null) qs.set(k, String(v));
+    }
+    const suffix = qs.size ? `?${qs.toString()}` : '';
+    const res = await fetch(`${config.resendApiBase}${path}${suffix}`, {
+      headers: { Authorization: `Bearer ${config.resendApiKey}` },
+    });
+    if (!res.ok) {
+      throw new Error(`Resend API ${path} failed: ${res.status} ${await res.text()}`);
+    }
+    return res.json();
+  }
+
+  // Pull real sent emails from the Resend API into the local Sent folder.
+  // Initial run loads the first page(s); subsequent runs fetch only the
+  // saved next-page cursor so newly sent mail appears between polls.
+  async syncResendSent() {
+    if (!this.resendSyncEnabled()) return;
+    const sent = this.folders.get('Sent');
+    if (!sent) return;
+
+    const page = this.resendNextPage || 1;
+    const json = await this.resendRequest('/emails', {
+      limit: config.resendSentPageSize,
+      page,
+    });
+
+    const emails = (json.data || []).slice().reverse(); // oldest first
+    for (const em of emails) {
+      if (this.resendSyncedIds.has(em.id)) continue;
+      const uid = this._nextResendSentUid();
+      const raw = await this._resendEmailToRaw(em);
+      const msg = {
+        uid,
+        flags: ['\\Seen'],
+        date: em.createdAt ? new Date(em.createdAt) : new Date(),
+        internaldate: em.createdAt ? new Date(em.createdAt) : new Date(),
+        modseq: uid,
+        raw,
+      };
+      binaryInsert(sent.messages, msg);
+      this.emailMap.set(uid, { folder: sent, message: msg });
+      this.resendSyncedIds.add(em.id);
+      if (config.verbose) {
+        console.log(`[Resend] synced sent email ${em.id}: ${em.subject || '(no subject)'}`);
+      }
+    }
+
+    this.resendNextPage = json.has_next_page ? json.next_page : null;
+    this._recomputeUidNext();
+  }
+
+  _nextResendSentUid() {
+    const sent = this.folders.get('Sent');
+    if (this.resendUidSeq === null) {
+      let max = 1;
+      for (const m of sent.messages) if (m.uid >= max) max = m.uid + 1;
+      this.resendUidSeq = max;
+    }
+    const uid = this.resendUidSeq++;
+    if (uid >= sent.uidNext) sent.uidNext = uid + 1;
+    return uid;
+  }
+
+  // Convert a Resend email object into a raw MIME message using buildRaw.
+  async _resendEmailToRaw(em) {
+    const fromStr = em.from || '';
+    const m = fromStr.match(/^(.*?)\s*<([^>]+)>$/);
+    const sendEmail = m ? m[2].trim() : fromStr;
+    const rawName = m ? m[1].trim() : fromStr;
+    const name = rawName.replace(/^"|"$/g, '');
+    const toMap = (arr) =>
+      (arr || []).map((a) => (typeof a === 'string' ? a : a ? { address: a.email, name: a.name || '' } : null)).filter(Boolean);
+    const row = {
+      emailId: 0,
+      sendEmail,
+      name,
+      subject: em.subject || '',
+      text: em.text || '',
+      content: em.html || '',
+      recipient: JSON.stringify(toMap(em.to)),
+      cc: JSON.stringify(toMap(em.cc)),
+      bcc: JSON.stringify(toMap(em.bcc)),
+      createTime: em.createdAt || new Date().toISOString(),
+      unread: 1,
+    };
+    // NOTE: attachment files referenced in the list response are not
+    // downloaded here (would need a GET /files/{id} per attachment).
+    return buildRaw(row, [], this.baseUrl);
   }
 
   findAccountByEmail(email) {
@@ -139,6 +253,10 @@ class MailStore {
   }
 
   async _poll() {
+    if (this.resendSyncEnabled() && this.resendNextPage) {
+      await this.syncResendSent();
+    }
+
     for (const account of this.accounts) {
       const lastId = this.lastReceivedIds.get(account.accountId) || 0;
       const data = await this.client.latestEmails({
@@ -163,7 +281,12 @@ class MailStore {
     }
   }
 
-  async appendSentCopy(parsed, emailResult) {
+  async appendSentCopy(parsed, emailResult, viaResend = false) {
+    // When the message went through Resend and sent-sync is active, the real
+    // email is pulled from the Resend API instead, so skip the synthetic
+    // local copy.
+    if (viaResend && this.resendSyncEnabled()) return;
+
     const sent = this.folders.get('Sent');
     if (!sent) return;
 

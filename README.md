@@ -172,7 +172,10 @@ See `.env.example` for all options. The most important ones are:
 - `SMTP_RELAY_PROVIDER` – `worker` (default) or `resend`
 - `RESEND_SMTP_HOST` / `RESEND_SMTP_PORT` / `RESEND_SMTP_SECURE`
 - `RESEND_SMTP_USER` (usually `resend`)
-- `RESEND_API_KEY`
+- `RESEND_API_KEY` – also enables sent-mail sync via the Resend API (see below)
+- `RESEND_SYNC_SENT` – pull real sent emails from the Resend API (`GET /emails`) into the IMAP Sent folder; on by default when `RESEND_API_KEY` is set, set `false` to keep SMTP-only usage
+- `RESEND_SENT_PAGE_SIZE` – page size for the Resend sent-sync (max 100)
+- `RESEND_API_BASE` – Resend API base URL (default `https://api.resend.com`)
 - `POLL_INTERVAL_MS` – how often new mail is fetched from the worker
 - `MAX_INITIAL_MESSAGES` – how many messages to load per account on first login
 - `TLS_KEY_PATH` / `TLS_CERT_PATH` – enable TLS for IMAP/SMTP (recommended for remote hosts)
