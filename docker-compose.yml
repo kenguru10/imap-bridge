@@ -15,4 +15,4 @@ services:
     volumes:
       # Mount the directory that contains your TLS key/cert files.
       # Update the host path to match TLS_KEY_PATH / TLS_CERT_PATH in .env.
-      - ./certs:/app/certs:ro
+      - /etc/letsencrypt:/app/certs:ro
