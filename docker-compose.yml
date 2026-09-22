@@ -16,3 +16,6 @@ services:
       # Mount the directory that contains your TLS key/cert files.
       # Update the host path to match TLS_KEY_PATH / TLS_CERT_PATH in .env.
       - /etc/letsencrypt:/etc/letsencrypt:ro
+      # Seen-report cache (survives container rebuilds; avoids re-reporting \Seen).
+      # Keep PERSIST_DIR=/data in .env to match.
+      - ./data:/data

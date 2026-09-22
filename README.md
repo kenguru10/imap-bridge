@@ -178,6 +178,9 @@ See `.env.example` for all options. The most important ones are:
 - `RESEND_API_BASE` – Resend API base URL (default `https://api.resend.com`)
 - `POLL_INTERVAL_MS` – how often new mail is fetched from the worker
 - `MAX_INITIAL_MESSAGES` – how many messages to load per account on first login
+- `SEEN_FLUSH_INTERVAL_MS` / `SEEN_FLUSH_MAX_BATCH` – batch `\Seen` reports to the worker on a timer instead of one write per read message (KV-write reduction)
+- `AUTH_RECHECK_MS` – skip the worker `/api/login` round-trip for cached users within this window (Outlook reconnects often; each login is a KV write on the worker)
+- `PERSIST_DIR` – where the seen-report cache files are stored (so an id is never reported twice, even across restarts)
 - `TLS_KEY_PATH` / `TLS_CERT_PATH` – enable TLS for IMAP/SMTP (recommended for remote hosts)
 
 ## Project layout

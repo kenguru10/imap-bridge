@@ -40,6 +40,15 @@ module.exports = {
 
   pollIntervalMs: Number(process.env.POLL_INTERVAL_MS || 30000),
   maxInitialMessages: Number(process.env.MAX_INITIAL_MESSAGES || 500),
+
+  // KV-write reduction:
+  // - batch \Seen reports to the worker on a timer instead of per message
+  seenFlushIntervalMs: Number(process.env.SEEN_FLUSH_INTERVAL_MS || 60000),
+  seenFlushMaxBatch: Number(process.env.SEEN_FLUSH_MAX_BATCH || 200),
+  // - skip re-authentication (worker /api/login) for cached users within this window
+  authRecheckMs: Number(process.env.AUTH_RECHECK_MS || 600000),
+  // - where the seen-report cache files live
+  persistDir: process.env.PERSIST_DIR || 'data',
   resendSentPageSize: Number(process.env.RESEND_SENT_PAGE_SIZE || 100),
 
   // When true, show extra logs (startup, IMAP errors, poll errors, auth failures).

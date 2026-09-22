@@ -1,5 +1,7 @@
 const { buildRaw } = require('./mime-builder');
 const { simpleParser } = require('mailparser');
+const fs = require('fs');
+const path = require('path');
 const config = require('./config');
 
 function createFolder(path, specialUse) {
@@ -48,15 +50,20 @@ function isOlderResendEmail(a, b) {
 }
 
 class MailStore {
-  constructor(client) {
+  constructor(client, persistKey) {
     this.client = client;
     this.baseUrl = config.workerUrl;
+    this.persistKey = persistKey;
     this.folders = new Map();
     this.accounts = [];
     this.accountMap = new Map();
     this.emailMap = new Map(); // emailId -> { folder, index }
     this.lastReceivedIds = new Map(); // accountId -> emailId
     this.pollTimer = null;
+    this.seenBuffer = new Set(); // emailIds marked \Seen locally, not yet reported
+    this.reportedSeenIds = new Set(); // emailIds already reported to the worker
+    this.seenFlushTimer = null;
+    this.seenFlushInFlight = false;
     this.resendSyncedIds = new Set(); // Resend email ids already synced into Sent
     this.resendCursorId = null; // oldest synced email id; 'after' param for next poll
     this.resendUidSeq = null; // numeric uid allocator for Resend-synced messages
@@ -86,8 +93,88 @@ class MailStore {
       }
     }
 
+    this._loadReportedSeenIds();
+
     this._recomputeUidNext();
     this._startPolling();
+    this._startSeenFlushTimer();
+  }
+
+  // --- KV-write reduction: batched \Seen reporting -------------------------
+  // Outlook marks messages \Seen constantly (and re-sends flag updates after
+  // reconnects). Instead of one worker write per message we buffer ids and
+  // flush on a timer, and never report an id twice (persisted across
+  // restarts in `${persistDir}/seen-<persistKey>.json`).
+  _seenCacheFile() {
+    return path.join(config.persistDir, `seen-${this.persistKey || 'default'}.json`);
+  }
+
+  _loadReportedSeenIds() {
+    try {
+      const ids = JSON.parse(fs.readFileSync(this._seenCacheFile(), 'utf8'));
+      for (const id of ids) this.reportedSeenIds.add(id);
+    } catch {
+      // no cache yet
+    }
+  }
+
+  _persistReportedSeenIds() {
+    try {
+      const ids = [...this.reportedSeenIds];
+      // Cap the cache so it can't grow unbounded.
+      const keep = ids.slice(-5000);
+      fs.mkdirSync(config.persistDir, { recursive: true });
+      fs.writeFileSync(this._seenCacheFile() + '.tmp', JSON.stringify(keep));
+      fs.renameSync(this._seenCacheFile() + '.tmp', this._seenCacheFile());
+      this.reportedSeenIds = new Set(keep);
+    } catch (e) {
+      if (config.verbose) console.error('Failed to persist seen cache:', e.message);
+    }
+  }
+
+  _startSeenFlushTimer() {
+    if (this.seenFlushTimer) clearInterval(this.seenFlushTimer);
+    this.seenFlushTimer = setInterval(() => {
+      this._flushSeen().catch((e) => {
+        if (config.verbose) console.error('Seen flush error:', e.message);
+      });
+    }, config.seenFlushIntervalMs);
+  }
+
+  async _flushSeen() {
+    if (this.seenFlushInFlight || !this.seenBuffer.size) return;
+    const batch = [...this.seenBuffer];
+    this.seenFlushInFlight = true;
+    try {
+      await this.client.readEmails(batch);
+      for (const id of batch) {
+        this.seenBuffer.delete(id);
+        this.reportedSeenIds.add(id);
+      }
+      this._persistReportedSeenIds();
+    } catch (e) {
+      // Worker unavailable (or KV limit hit): keep ids buffered, retry next tick.
+      if (config.verbose) console.error('Seen report deferred:', e.message);
+    } finally {
+      this.seenFlushInFlight = false;
+    }
+  }
+
+  async markSeen(emailIds) {
+    const fresh = [];
+    for (const id of emailIds) {
+      const rec = this.emailMap.get(id);
+      if (!rec || rec.message.flags.includes('\\Seen')) continue;
+      rec.message.flags.push('\\Seen');
+      fresh.push(id);
+    }
+    if (!fresh.length) return;
+    const pending = fresh.filter((id) => !this.reportedSeenIds.has(id));
+    for (const id of pending) this.seenBuffer.add(id);
+    // Flush immediately if the buffer is large; otherwise wait for the timer.
+    if (this.seenBuffer.size >= config.seenFlushMaxBatch) {
+      await this._flushSeen();
+    }
   }
 
   resendSyncEnabled() {
@@ -418,21 +505,6 @@ class MailStore {
     return { uidValidity: folder.uidValidity, uid: emailId };
   }
 
-  async markSeen(emailIds) {
-    const ids = emailIds.filter((id) => {
-      const rec = this.emailMap.get(id);
-      return rec && !rec.message.flags.includes('\\Seen');
-    });
-    if (!ids.length) return;
-    await this.client.readEmails(ids);
-    for (const id of ids) {
-      const rec = this.emailMap.get(id);
-      if (rec && !rec.message.flags.includes('\\Seen')) {
-        rec.message.flags.push('\\Seen');
-      }
-    }
-  }
-
   async deleteMessages(emailIds) {
     if (!emailIds.length) return;
     await this.client.deleteEmails(emailIds);
@@ -448,6 +520,11 @@ class MailStore {
 
   stop() {
     if (this.pollTimer) clearInterval(this.pollTimer);
+    if (this.seenFlushTimer) clearInterval(this.seenFlushTimer);
+    if (this.seenBuffer.size) {
+      // Best-effort final flush so read state isn't lost on shutdown.
+      this._flushSeen().catch(() => {});
+    }
   }
 }
 
