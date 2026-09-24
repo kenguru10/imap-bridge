@@ -57,12 +57,8 @@ function createSMTPServer(getSessionStore) {
       try {
         const { store } = await getSessionStore(auth.username, auth.password);
         session.user = { username: auth.username, store };
-        if (config.verbose)
-          console.log(`[SMTP] auth ok: ${auth.username} (${session.secure ? 'TLS' : 'insecure'}, ${session.hostAddress}:${session.port})`);
         callback(null, { user: session.user });
-      } catch (err) {
-        if (config.verbose)
-          console.error(`[SMTP] auth failed: ${auth.username} (${session.hostAddress}:${session.port}): ${err.message}`);
+      } catch {
         callback(new Error('Authentication failed'));
       }
     },
@@ -95,19 +91,13 @@ function createSMTPServer(getSessionStore) {
         const rcptAddresses = session.envelope.rcptTo.map((r) => r.address);
         const receiveEmail = [...new Set([...toAddresses, ...ccAddresses, ...bccAddresses, ...rcptAddresses])].filter(Boolean);
 
-        console.log(
-          `[SMTP] message received: from ${fromAddress} (${fromName || '(no name)'}) -> ${receiveEmail.join(', ')} | subject: ${parsed.subject || '(no subject)'} | size: ${stream.size || '?'}B | attachments: ${(parsed.attachments || []).length}`
-        );
-
         if (!receiveEmail.length) {
-          console.log(`[SMTP] rejected (no recipients): from ${fromAddress}`);
           return callback(new Error('No recipients'));
         }
 
         let emailResult;
 
         const relay = config.smtpRelayProvider === 'resend' ? 'resend' : 'worker';
-        console.log(`[SMTP] relaying via ${relay}...`);
 
         if (relay === 'resend') {
           emailResult = await sendViaResend(parsed, fromAddress, fromName, toAddresses, ccAddresses, bccAddresses);
@@ -135,23 +125,17 @@ function createSMTPServer(getSessionStore) {
           emailResult = Array.isArray(result) ? result[0] : result;
         }
 
-        console.log(
-          `[SMTP] send ok via ${relay}: emailId=${emailResult.emailId || '-'} messageId=${emailResult.messageId || '-'} createTime=${emailResult.createTime || '-'} `
-        );
-
         // Save a copy to the local Sent folder so Outlook sees it.
         if (config.smtpSaveSentCopy) {
           try {
             await store.appendSentCopy(parsed, emailResult, relay === 'resend');
-            console.log(`[SMTP] saved sent copy for ${fromAddress}: ${parsed.subject || '(no subject)'}`);
-          } catch (appendErr) {
-            console.error('Failed to save sent copy:', appendErr.message);
+          } catch {
+            // ignore
           }
         }
 
         callback(null, 'Message accepted');
       } catch (err) {
-        console.error(`[SMTP] send failed (user=${session.user ? session.user.username : '?'}):`, err.stack || err.message);
         callback(new Error(err.message || 'Message rejected'));
       }
     },
@@ -171,9 +155,6 @@ function createSMTPServer(getSessionStore) {
   }
 
   const server = new SMTPServer(options);
-  server.on('error', (err) => {
-    console.error('SMTP server error:', err.stack || err.message);
-  });
 
   return server;
 }

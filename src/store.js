@@ -88,8 +88,8 @@ class MailStore {
     if (this.resendSyncEnabled()) {
       try {
         await this.syncResendSent();
-      } catch (e) {
-        if (config.verbose) console.error('Initial Resend sent sync failed:', e.message);
+      } catch {
+        // ignore
       }
     }
 
@@ -127,17 +127,15 @@ class MailStore {
       fs.writeFileSync(this._seenCacheFile() + '.tmp', JSON.stringify(keep));
       fs.renameSync(this._seenCacheFile() + '.tmp', this._seenCacheFile());
       this.reportedSeenIds = new Set(keep);
-    } catch (e) {
-      if (config.verbose) console.error('Failed to persist seen cache:', e.message);
+    } catch {
+      // ignore
     }
   }
 
   _startSeenFlushTimer() {
     if (this.seenFlushTimer) clearInterval(this.seenFlushTimer);
     this.seenFlushTimer = setInterval(() => {
-      this._flushSeen().catch((e) => {
-        if (config.verbose) console.error('Seen flush error:', e.message);
-      });
+      this._flushSeen().catch(() => {});
     }, config.seenFlushIntervalMs);
   }
 
@@ -152,9 +150,8 @@ class MailStore {
         this.reportedSeenIds.add(id);
       }
       this._persistReportedSeenIds();
-    } catch (e) {
+    } catch {
       // Worker unavailable (or KV limit hit): keep ids buffered, retry next tick.
-      if (config.verbose) console.error('Seen report deferred:', e.message);
     } finally {
       this.seenFlushInFlight = false;
     }
@@ -221,8 +218,8 @@ class MailStore {
       let detail = em;
       try {
         detail = { ...em, ...(await this.resendRequest(`/emails/${em.id}`)) };
-      } catch (e) {
-        if (config.verbose) console.error(`Resend detail fetch failed for ${em.id}:`, e.message);
+      } catch {
+        // ignore
       }
 
       const uid = this._nextResendSentUid();
@@ -239,9 +236,6 @@ class MailStore {
       binaryInsert(sent.messages, msg);
       this.emailMap.set(uid, { folder: sent, message: msg });
       this.resendSyncedIds.add(em.id);
-      if (config.verbose) {
-        console.log(`[Resend] synced sent email ${em.id}: ${em.subject || '(no subject)'}`);
-      }
     }
 
     // The list is newest-first, so the last entry is the batch's oldest id.
@@ -372,7 +366,7 @@ class MailStore {
 
   _startPolling() {
     if (this.pollTimer) clearInterval(this.pollTimer);
-    this.pollTimer = setInterval(() => this._poll().catch((e) => { if (config.verbose) console.error('Poll error', e); }), config.pollIntervalMs);
+    this.pollTimer = setInterval(() => this._poll().catch(() => {}), config.pollIntervalMs);
   }
 
   async _poll() {

@@ -37,16 +37,11 @@ async function getSessionStore(username, password) {
 const imapServer = createIMAPServer(getSessionStore);
 const smtpServer = createSMTPServer(getSessionStore);
 
-imapServer.listen(config.imapPort, config.imapHost, () => {
-  if (config.verbose) console.log(`IMAP server listening on ${config.imapHost}:${config.imapPort}`);
-});
+imapServer.listen(config.imapPort, config.imapHost);
 
-smtpServer.listen(config.smtpPort, config.smtpHost, () => {
-  if (config.verbose) console.log(`SMTP server listening on ${config.smtpHost}:${config.smtpPort}`);
-});
+smtpServer.listen(config.smtpPort, config.smtpHost);
 
 process.on('SIGINT', () => {
-  if (config.verbose) console.log('\nShutting down...');
   for (const entry of storeCache.values()) entry.store.stop();
   imapServer.close(() => {
     smtpServer.close(() => {

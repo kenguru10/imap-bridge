@@ -152,7 +152,7 @@ Outlook still talks to the bridge on `SMTP_PORT` for outgoing mail; the bridge a
    - point Outlook SMTP to the bridge (`SMTP_HOST:SMTP_PORT`) and set `SMTP_RELAY_PROVIDER=resend`, or
    - configure Outlook to save sent copies in the IMAP Sent folder (some Outlook versions do this automatically).
 
-2. **Check the bridge logs** when you send. If the worker or Resend rejects the message, no copy is saved.
+2. **Check for errors** when you send. If the worker or Resend rejects the message, no copy is saved.
 
 3. **Avoid duplicate copies.** If your client appends its own sent copy and the bridge also adds one, you will see duplicates. Set `SMTP_SAVE_SENT_COPY=false` to let the client handle it.
 
